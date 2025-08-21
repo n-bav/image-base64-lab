@@ -16,10 +16,12 @@
     input[type="text"], textarea { width: 100%; border:1px solid var(--ring); border-radius: 10px; padding:10px 12px; font:inherit; }
     button { border:1px solid var(--ring); background:white; padding:10px 12px; border-radius: 10px; cursor:pointer; }
     button:hover { background:#f3f4f6; }
-    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap:10px; }
-    .thumb { position: relative; border:1px solid var(--ring); border-radius: 12px; overflow:hidden; background:#fff; }
-    .thumb img { width:100%; height:140px; object-fit:cover; display:block; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap:12px; }
+    .thumb { position: relative; border:1px solid var(--ring); border-radius: 12px; overflow:hidden; background:#fff; cursor:pointer; }
+    .thumb img { width:100%; height:160px; object-fit:cover; display:block; }
     .thumb .meta { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent, rgba(0,0,0,.6)); color:white; font-size:12px; padding:6px 8px; }
+    .badge { position:absolute; top:8px; left:8px; background: rgba(15,23,42,.9); color:#fff; font-size:11px; padding:3px 6px; border-radius:999px; display:none; }
+    .thumb.mode-b64 .badge { display:inline-block; }
     .hidden { display:none; }
     .flex { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .preview { max-width:100%; max-height:360px; object-fit:contain; border:1px solid var(--ring); border-radius: 10px; }
@@ -27,6 +29,7 @@
     @media (min-width: 900px) { .cols { grid-template-columns: 1.2fr 1fr; } }
     small.muted { color: var(--muted); }
     .pill { background:#f1f5f9; padding:4px 8px; border-radius: 999px; font-size:12px; }
+    .toast { position:fixed; right:12px; top:12px; background:rgba(0,0,0,.82); color:#fff; padding:10px 14px; border-radius:8px; z-index:9999; font:12px/1.2 system-ui,sans-serif; }
   </style>
 </head>
 <body>
@@ -38,7 +41,7 @@
       <div class="row">
         <input id="q" type="text" placeholder="Search Wikimedia Commons (e.g., 'sunrise', 'cat', 'New York skyline')" />
         <button id="searchBtn">Search</button>
-        <span class="pill">Source: Wikimedia Commons</span>
+        <span class="pill">Right-click a result → convert; left-click → show original</span>
       </div>
       <div id="results" class="grid" style="margin-top:12px;"></div>
       <div id="noResults" class="hidden" style="margin-top:8px;">
@@ -53,11 +56,6 @@
           <small id="imgInfo" class="muted"></small>
         </div>
         <img id="preview" class="preview" alt="Preview" />
-        <div class="row" style="margin-top:10px;">
-          <input id="imageUrl" type="text" placeholder="…or paste an image URL and click Load" />
-          <button id="loadUrl">Load</button>
-          <input type="file" id="fileInput" accept="image/*" />
-        </div>
       </div>
       <div>
         <div class="flex" style="justify-content:space-between;">
@@ -69,21 +67,7 @@
           </div>
         </div>
         <textarea id="b64" rows="12" placeholder="data:image/png;base64,...."></textarea>
-        <div class="row" style="margin-top:8px;">
-          <button id="fromB64">Load from Base64</button>
-          <small class="muted">Paste a Base64 data URL above and click “Load from Base64”.</small>
-        </div>
       </div>
-    </section>
-
-    <section class="card">
-      <strong>Tips</strong>
-      <ul>
-        <li>Click a search result to select and convert automatically.</li>
-        <li>Drag & drop an image file onto this page to convert.</li>
-        <li>Paste a Base64 string into the right panel and click <em>Load from Base64</em>.</li>
-      </ul>
-      <small class="muted">Powered by Wikimedia Commons API. Images are typically under free licenses—check at source.</small>
     </section>
   </main>
 
@@ -95,13 +79,17 @@ const noResults = document.getElementById('noResults');
 const preview = document.getElementById('preview');
 const b64ta = document.getElementById('b64');
 const imgInfo = document.getElementById('imgInfo');
-const imageUrlInput = document.getElementById('imageUrl');
-const loadUrlBtn = document.getElementById('loadUrl');
-const fileInput = document.getElementById('fileInput');
 const copyBtn = document.getElementById('copyB64');
 const downloadB64Btn = document.getElementById('downloadB64');
 const downloadDecodedBtn = document.getElementById('downloadDecoded');
-const fromB64Btn = document.getElementById('fromB64');
+
+function toast(msg){
+  const n = document.createElement('div');
+  n.className = 'toast';
+  n.textContent = msg;
+  document.body.appendChild(n);
+  setTimeout(()=> n.remove(), 2000);
+}
 
 async function searchCommons(term) {
   results.innerHTML = '';
@@ -135,8 +123,53 @@ async function searchCommons(term) {
       const mime = info.mime || '';
       const el = document.createElement('div');
       el.className = 'thumb';
-      el.innerHTML = `<img src="${thumb}" alt="thumbnail"/><div class="meta">${mime.replace('image/','')}</div>`;
-      el.addEventListener('click', () => selectImage(full));
+      el.dataset.full = full;
+      el.dataset.mime = mime;
+      el.dataset.mode = 'orig';
+      el.innerHTML = `<span class="badge">BASE64</span><img src="${thumb}" alt="thumbnail"/><div class="meta">${mime.replace('image/','')}</div>`;
+
+      // Right-click → convert to Base64
+      el.addEventListener('contextmenu', async (e) => {
+        e.preventDefault();
+        try {
+          const {dataUrl, size} = await fetchAsDataUrl(full);
+          el.dataset.b64 = dataUrl;
+          el.dataset.mode = 'b64';
+          el.classList.add('mode-b64');
+          preview.src = dataUrl;
+          b64ta.value = dataUrl;
+          imgInfo.textContent = `${mime || 'image/*'} • ${Math.round(size/1024)} KB (Base64)`;
+          try { await navigator.clipboard.writeText(dataUrl); toast('Base64 copied to clipboard'); } catch { toast('Base64 ready'); }
+        } catch (err) {
+          console.error(err);
+          toast('Failed to convert (CORS or network)');
+        }
+      });
+
+      // Left-click → show original image
+      el.addEventListener('click', (e) => {
+        const mode = el.dataset.mode || 'orig';
+        const fullUrl = el.dataset.full;
+        if (mode === 'b64') {
+          preview.src = fullUrl; // show original
+          imgInfo.textContent = `${mime || 'image/*'} • original`;
+          el.dataset.mode = 'orig';
+          el.classList.remove('mode-b64');
+          toast('Showing original image');
+        } else {
+          if (el.dataset.b64) {
+            preview.src = el.dataset.b64;
+            b64ta.value = el.dataset.b64;
+            imgInfo.textContent = `${mime || 'image/*'} • Base64`;
+            el.dataset.mode = 'b64';
+            el.classList.add('mode-b64');
+          } else {
+            preview.src = fullUrl;
+            imgInfo.textContent = `${mime || 'image/*'} • original`;
+          }
+        }
+      });
+
       results.appendChild(el);
     }
   } catch (e) {
@@ -145,25 +178,12 @@ async function searchCommons(term) {
   }
 }
 
-async function selectImage(url) {
-  imageUrlInput.value = url;
-  imgInfo.textContent = url;
-  await processImageUrl(url);
-}
-
-async function processImageUrl(url) {
-  try {
-    const res = await fetch(url, { mode: 'cors' });
-    if (!res.ok) throw new Error('Fetch failed');
-    const ct = res.headers.get('content-type') || 'image/png';
-    const blob = await res.blob();
-    const dataUrl = await blobToDataUrl(blob);
-    preview.src = dataUrl;
-    b64ta.value = dataUrl;
-    imgInfo.textContent = `${ct} • ${Math.round(blob.size/1024)} KB`;
-  } catch (e) {
-    alert('Could not load image (maybe CORS-blocked). Try downloading the file and dropping it here.');
-  }
+async function fetchAsDataUrl(url){
+  const res = await fetch(url, { mode: 'cors' });
+  if (!res.ok) throw new Error('Fetch failed');
+  const blob = await res.blob();
+  const dataUrl = await blobToDataUrl(blob);
+  return { dataUrl, size: blob.size };
 }
 
 function blobToDataUrl(blob) {
@@ -188,25 +208,8 @@ function dataUrlToBlob(dataUrl) {
   } catch { return null; }
 }
 
-// Events
-searchBtn.addEventListener('click', () => searchCommons(q.value.trim()));
-q.addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchCommons(q.value.trim()); });
-loadUrlBtn.addEventListener('click', ()=>{ const u=imageUrlInput.value.trim(); if(u) processImageUrl(u); });
-fileInput.addEventListener('change', async (e)=>{
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
-  const dataUrl = await blobToDataUrl(file);
-  preview.src = dataUrl;
-  b64ta.value = dataUrl;
-  imgInfo.textContent = `${file.type || 'image/*'} • ${Math.round(file.size/1024)} KB`;
-});
-
 copyBtn.addEventListener('click', async ()=>{
-  try {
-    await navigator.clipboard.writeText(b64ta.value);
-  } catch {
-    const ta = b64ta; ta.select(); document.execCommand('copy');
-  }
+  try { await navigator.clipboard.writeText(b64ta.value); toast('Copied'); } catch { b64ta.select(); document.execCommand('copy'); toast('Copied'); }
 });
 
 downloadB64Btn.addEventListener('click', ()=>{
@@ -223,29 +226,14 @@ downloadDecodedBtn.addEventListener('click', ()=>{
   triggerDownload(url, `decoded-image.${ext}`);
 });
 
-fromB64Btn.addEventListener('click', ()=>{
-  const blob = dataUrlToBlob(b64ta.value.trim());
-  if (!blob) { alert('Not a valid Base64 data URL.'); return; }
-  const url = URL.createObjectURL(blob);
-  preview.src = url;
-  imgInfo.textContent = `${blob.type || 'image/*'} • ${Math.round(blob.size/1024)} KB`;
-});
-
 function triggerDownload(url, name){
   const a = document.createElement('a');
   a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 5000);
 }
 
-// Drag & drop
-window.addEventListener('dragover', e=>{ e.preventDefault(); });
-window.addEventListener('drop', async (e)=>{
-  e.preventDefault();
-  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if (!file) return;
-  const dataUrl = await blobToDataUrl(file);
-  preview.src = dataUrl; b64ta.value = dataUrl; imgInfo.textContent = `${file.type} • ${Math.round(file.size/1024)} KB`;
-});
+searchBtn.addEventListener('click', () => searchCommons(q.value.trim()));
+q.addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchCommons(q.value.trim()); });
 </script>
 </body>
 </html>
