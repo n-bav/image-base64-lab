@@ -16,32 +16,33 @@
     #results { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap:8px; }
     .thumb { border:1px solid var(--ring); border-radius:8px; overflow:hidden; cursor:pointer; }
     .thumb img { width:100%; height:120px; object-fit:cover; display:block; }
-    #stage { border:1px dashed var(--ring); border-radius:12px; padding:10px; min-height:260px; display:grid; place-items:center; background:#fff; }
-    #stage img { max-width:100%; max-height:420px; object-fit:contain; display:block; }
-    #b64 { width:100%; height:420px; overflow:auto; white-space:pre-wrap; word-break:break-all; font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; display:none; }
-    small { color:#64748b; }
+    #stage { border:1px dashed var(--ring); border-radius:12px; padding:10px; min-height:260px; display:none; place-items:center; background:#fff; }
+    #img { max-width:100%; max-height:80vh; object-fit:contain; display:none; }
+    #b64 { width:100%; max-height:80vh; overflow:auto; white-space:pre-wrap; word-break:break-all; font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; display:none; }
   </style>
 </head>
 <body>
   <header><strong>Image ⇄ Base64</strong></header>
   <main>
-    <!-- Minimal controls -->
-    <div class="row">
+    <!-- Controls shown initially -->
+    <div id="controls" class="row">
       <input id="q" type="text" placeholder="Search Wikimedia Commons (e.g., 'cat', 'sunrise')" />
       <button id="searchBtn">Search</button>
       <input id="fileInput" type="file" accept="image/*" />
     </div>
+
+    <!-- Search results (hidden once an image is chosen) -->
     <div id="results"></div>
 
-    <!-- Display area: right-click to show Base64; left-click to show image -->
+    <!-- Display area: clicking toggles image ⇄ Base64 -->
     <div id="stage">
-      <img id="img" alt="(no image yet)" />
+      <img id="img" alt="image" />
       <pre id="b64"></pre>
     </div>
-    <small>Right-click on the displayed image to show Base64. Left-click on the Base64 to switch back to the image.</small>
   </main>
 
 <script>
+const controls = document.getElementById('controls');
 const q = document.getElementById('q');
 const searchBtn = document.getElementById('searchBtn');
 const results = document.getElementById('results');
@@ -51,37 +52,126 @@ const stage = document.getElementById('stage');
 const imgEl = document.getElementById('img');
 const b64El = document.getElementById('b64');
 
-// Keep minimal state
-let currentBlob = null;     // Blob of the displayed image
-let currentDataUrl = null;  // Base64 data URL string
-let mode = 'image';         // 'image' or 'b64'
+let currentBlob = null;     // Blob of current image
+let currentDataUrl = null;  // Base64 data URL
+let mode = 'none';          // 'image' | 'b64' | 'none'
 
-// ----- Core behaviors -----
-
-// Right-click the displayed image -> show Base64
-stage.addEventListener('contextmenu', async (e) => {
-  // Only act if we're currently showing the image element
-  if (mode !== 'image' || !imgEl.src) return;
-  e.preventDefault();
-  try {
-    // If we don't have the blob yet (e.g., img loaded from URL), fetch it
-    if (!currentBlob) {
-      const res = await fetch(imgEl.src, { mode: 'cors' });
-      if (!res.ok) throw new Error('Fetch failed');
-      currentBlob = await res.blob();
-    }
-    // Convert blob to Base64
-    currentDataUrl = await blobToDataUrl(currentBlob);
-    // Swap UI: hide image, show Base64
-    imgEl.style.display = 'none';
-    b64El.textContent = currentDataUrl;
-    b64El.style.display = 'block';
-    mode = 'b64';
-  } catch (err) {
-    alert('Could not convert to Base64 (CORS or network). Try uploading the file instead.');
-  }
+// ----- Toggle behavior -----
+imgEl.addEventListener('click', async () => {
+  if (mode !== 'image') return;
+  await showBase64();
 });
 
-// Left-click the Base64 -> show image again
-stage.addEventListener('click', () => {
-  if
+b64El.addEventListener('click', () => {
+  if (mode !== 'b64') return;
+  showImage();
+});
+
+function showImage() {
+  b64El.style.display = 'none';
+  imgEl.style.display = 'block';
+  mode = 'image';
+}
+
+async function showBase64() {
+  try {
+    if (!currentBlob) return;
+    if (!currentDataUrl) currentDataUrl = await blobToDataUrl(currentBlob);
+    b64El.textContent = currentDataUrl;
+    imgEl.style.display = 'none';
+    b64El.style.display = 'block';
+    mode = 'b64';
+  } catch {
+    alert('Could not convert to Base64. If this is a web image, try uploading it instead.');
+  }
+}
+
+// ----- Search -----
+searchBtn.addEventListener('click', () => doSearch(q.value.trim()));
+q.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(q.value.trim()); });
+
+async function doSearch(term) {
+  results.innerHTML = '';
+  if (!term) return;
+  const endpoint = 'https://commons.wikimedia.org/w/api.php';
+  const params = new URLSearchParams({
+    action: 'query',
+    generator: 'search',
+    gsrsearch: term,
+    gsrnamespace: '6',
+    gsrlimit: '18',
+    prop: 'imageinfo',
+    iiprop: 'url|mime',
+    iiurlwidth: '600',
+    format: 'json',
+    origin: '*'
+  });
+  try {
+    const res = await fetch(`${endpoint}?${params}`);
+    const data = await res.json();
+    const pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
+    pages.sort((a,b)=> (a.index||0) - (b.index||0));
+    for (const p of pages) {
+      const info = p.imageinfo && p.imageinfo[0];
+      if (!info) continue;
+      const thumb = info.thumburl || info.url;
+      const full  = info.url;
+      const card = document.createElement('div');
+      card.className = 'thumb';
+      card.innerHTML = `<img src="${thumb}" alt="thumb">`;
+      card.addEventListener('click', () => loadImageFromUrl(full));
+      results.appendChild(card);
+    }
+  } catch {
+    // minimal: do nothing
+  }
+}
+
+// ----- Upload -----
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  setStageImage(file);
+});
+
+// ----- Stage helpers -----
+async function loadImageFromUrl(url) {
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error('Fetch failed');
+    const blob = await res.blob();
+    setStageImage(blob);
+  } catch {
+    alert('Could not load image from the web (CORS). Try using file upload.');
+  }
+}
+
+function setStageImage(blob) {
+  // Hide all non-stage UI
+  controls.style.display = 'none';
+  results.style.display = 'none';
+
+  // Clean previous
+  if (imgEl.src && imgEl.src.startsWith('blob:')) URL.revokeObjectURL(imgEl.src);
+  currentBlob = blob;
+  currentDataUrl = null;
+
+  // Show only the stage with the image
+  imgEl.src = URL.createObjectURL(blob);
+  imgEl.style.display = 'block';
+  b64El.style.display = 'none';
+  stage.style.display = 'grid';
+  mode = 'image';
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+</script>
+</body>
+</html>
