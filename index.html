@@ -3,237 +3,85 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Image ⇄ Base64 Lab</title>
+  <title>Image ⇄ Base64 (Minimal)</title>
   <style>
-    :root { --ink:#0f172a; --bg:#f8fafc; --card:#ffffff; --muted:#64748b; --ring:#e5e7eb; }
+    :root { --ink:#0f172a; --ring:#e5e7eb; --bg:#f8fafc; }
     * { box-sizing: border-box; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--ink); }
-    header { padding: 16px 20px; background: var(--ink); color: white; }
-    header h1 { margin:0; font-size: 18px; }
-    main { padding: 16px; display: grid; gap: 16px; max-width: 1100px; margin: 0 auto; }
-    .card { background: var(--card); border:1px solid var(--ring); border-radius: 16px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-    .row { display:flex; gap:8px; flex-wrap:wrap; align-items: center; }
-    input[type="text"], textarea { width: 100%; border:1px solid var(--ring); border-radius: 10px; padding:10px 12px; font:inherit; }
-    button { border:1px solid var(--ring); background:white; padding:10px 12px; border-radius: 10px; cursor:pointer; }
-    button:hover { background:#f3f4f6; }
-    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap:12px; }
-    .thumb { position: relative; border:1px solid var(--ring); border-radius: 12px; overflow:hidden; background:#fff; cursor:pointer; }
-    .thumb img { width:100%; height:160px; object-fit:cover; display:block; }
-    .thumb .meta { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent, rgba(0,0,0,.6)); color:white; font-size:12px; padding:6px 8px; }
-    .badge { position:absolute; top:8px; left:8px; background: rgba(15,23,42,.9); color:#fff; font-size:11px; padding:3px 6px; border-radius:999px; display:none; }
-    .thumb.mode-b64 .badge { display:inline-block; }
-    .hidden { display:none; }
-    .flex { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .preview { max-width:100%; max-height:360px; object-fit:contain; border:1px solid var(--ring); border-radius: 10px; }
-    .cols { display:grid; grid-template-columns: 1fr; gap:16px; }
-    @media (min-width: 900px) { .cols { grid-template-columns: 1.2fr 1fr; } }
-    small.muted { color: var(--muted); }
-    .pill { background:#f1f5f9; padding:4px 8px; border-radius: 999px; font-size:12px; }
-    .toast { position:fixed; right:12px; top:12px; background:rgba(0,0,0,.82); color:#fff; padding:10px 14px; border-radius:8px; z-index:9999; font:12px/1.2 system-ui,sans-serif; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+    header { padding:14px 16px; background:#0f172a; color:#fff; }
+    main { padding:16px; max-width:900px; margin:0 auto; display:grid; gap:16px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    input[type="text"] { flex:1 1 260px; padding:10px 12px; border:1px solid var(--ring); border-radius:8px; }
+    button, input[type="file"] { padding:10px 12px; border:1px solid var(--ring); border-radius:8px; background:#fff; cursor:pointer; }
+    #results { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap:8px; }
+    .thumb { border:1px solid var(--ring); border-radius:8px; overflow:hidden; cursor:pointer; }
+    .thumb img { width:100%; height:120px; object-fit:cover; display:block; }
+    #stage { border:1px dashed var(--ring); border-radius:12px; padding:10px; min-height:260px; display:grid; place-items:center; background:#fff; }
+    #stage img { max-width:100%; max-height:420px; object-fit:contain; display:block; }
+    #b64 { width:100%; height:420px; overflow:auto; white-space:pre-wrap; word-break:break-all; font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; display:none; }
+    small { color:#64748b; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>🖼️ Image ⇄ Base64 Lab</h1>
-  </header>
+  <header><strong>Image ⇄ Base64</strong></header>
   <main>
-    <section class="card">
-      <div class="row">
-        <input id="q" type="text" placeholder="Search Wikimedia Commons (e.g., 'sunrise', 'cat', 'New York skyline')" />
-        <button id="searchBtn">Search</button>
-        <span class="pill">Right-click a result → convert; left-click → show original</span>
-      </div>
-      <div id="results" class="grid" style="margin-top:12px;"></div>
-      <div id="noResults" class="hidden" style="margin-top:8px;">
-        <small class="muted">No results. Try another term.</small>
-      </div>
-    </section>
+    <!-- Minimal controls -->
+    <div class="row">
+      <input id="q" type="text" placeholder="Search Wikimedia Commons (e.g., 'cat', 'sunrise')" />
+      <button id="searchBtn">Search</button>
+      <input id="fileInput" type="file" accept="image/*" />
+    </div>
+    <div id="results"></div>
 
-    <section class="card cols">
-      <div>
-        <div class="flex">
-          <strong>Selected Image</strong>
-          <small id="imgInfo" class="muted"></small>
-        </div>
-        <img id="preview" class="preview" alt="Preview" />
-      </div>
-      <div>
-        <div class="flex" style="justify-content:space-between;">
-          <strong>Base64</strong>
-          <div class="row">
-            <button id="copyB64">Copy</button>
-            <button id="downloadB64">Download .txt</button>
-            <button id="downloadDecoded">Download Decoded Image</button>
-          </div>
-        </div>
-        <textarea id="b64" rows="12" placeholder="data:image/png;base64,...."></textarea>
-      </div>
-    </section>
+    <!-- Display area: right-click to show Base64; left-click to show image -->
+    <div id="stage">
+      <img id="img" alt="(no image yet)" />
+      <pre id="b64"></pre>
+    </div>
+    <small>Right-click on the displayed image to show Base64. Left-click on the Base64 to switch back to the image.</small>
   </main>
 
 <script>
 const q = document.getElementById('q');
 const searchBtn = document.getElementById('searchBtn');
 const results = document.getElementById('results');
-const noResults = document.getElementById('noResults');
-const preview = document.getElementById('preview');
-const b64ta = document.getElementById('b64');
-const imgInfo = document.getElementById('imgInfo');
-const copyBtn = document.getElementById('copyB64');
-const downloadB64Btn = document.getElementById('downloadB64');
-const downloadDecodedBtn = document.getElementById('downloadDecoded');
+const fileInput = document.getElementById('fileInput');
 
-function toast(msg){
-  const n = document.createElement('div');
-  n.className = 'toast';
-  n.textContent = msg;
-  document.body.appendChild(n);
-  setTimeout(()=> n.remove(), 2000);
-}
+const stage = document.getElementById('stage');
+const imgEl = document.getElementById('img');
+const b64El = document.getElementById('b64');
 
-async function searchCommons(term) {
-  results.innerHTML = '';
-  noResults.classList.add('hidden');
-  if (!term) return;
-  const endpoint = 'https://commons.wikimedia.org/w/api.php';
-  const params = new URLSearchParams({
-    action: 'query',
-    generator: 'search',
-    gsrsearch: term,
-    gsrnamespace: '6',
-    gsrlimit: '24',
-    prop: 'imageinfo',
-    iiprop: 'url|mime',
-    iiurlwidth: '600',
-    format: 'json',
-    origin: '*'
-  });
-  const url = `${endpoint}?${params}`;
+// Keep minimal state
+let currentBlob = null;     // Blob of the displayed image
+let currentDataUrl = null;  // Base64 data URL string
+let mode = 'image';         // 'image' or 'b64'
+
+// ----- Core behaviors -----
+
+// Right-click the displayed image -> show Base64
+stage.addEventListener('contextmenu', async (e) => {
+  // Only act if we're currently showing the image element
+  if (mode !== 'image' || !imgEl.src) return;
+  e.preventDefault();
   try {
-    const res = await fetch(url);
-    const data = await res.json();
-    const pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
-    if (!pages.length) { noResults.classList.remove('hidden'); return; }
-    pages.sort((a,b)=> (a.index||0) - (b.index||0));
-    for (const p of pages) {
-      const info = p.imageinfo && p.imageinfo[0];
-      if (!info) continue;
-      const thumb = info.thumburl || info.url;
-      const full = info.url;
-      const mime = info.mime || '';
-      const el = document.createElement('div');
-      el.className = 'thumb';
-      el.dataset.full = full;
-      el.dataset.mime = mime;
-      el.dataset.mode = 'orig';
-      el.innerHTML = `<span class="badge">BASE64</span><img src="${thumb}" alt="thumbnail"/><div class="meta">${mime.replace('image/','')}</div>`;
-
-      // Right-click → convert to Base64
-      el.addEventListener('contextmenu', async (e) => {
-        e.preventDefault();
-        try {
-          const {dataUrl, size} = await fetchAsDataUrl(full);
-          el.dataset.b64 = dataUrl;
-          el.dataset.mode = 'b64';
-          el.classList.add('mode-b64');
-          preview.src = dataUrl;
-          b64ta.value = dataUrl;
-          imgInfo.textContent = `${mime || 'image/*'} • ${Math.round(size/1024)} KB (Base64)`;
-          try { await navigator.clipboard.writeText(dataUrl); toast('Base64 copied to clipboard'); } catch { toast('Base64 ready'); }
-        } catch (err) {
-          console.error(err);
-          toast('Failed to convert (CORS or network)');
-        }
-      });
-
-      // Left-click → show original image
-      el.addEventListener('click', (e) => {
-        const mode = el.dataset.mode || 'orig';
-        const fullUrl = el.dataset.full;
-        if (mode === 'b64') {
-          preview.src = fullUrl; // show original
-          imgInfo.textContent = `${mime || 'image/*'} • original`;
-          el.dataset.mode = 'orig';
-          el.classList.remove('mode-b64');
-          toast('Showing original image');
-        } else {
-          if (el.dataset.b64) {
-            preview.src = el.dataset.b64;
-            b64ta.value = el.dataset.b64;
-            imgInfo.textContent = `${mime || 'image/*'} • Base64`;
-            el.dataset.mode = 'b64';
-            el.classList.add('mode-b64');
-          } else {
-            preview.src = fullUrl;
-            imgInfo.textContent = `${mime || 'image/*'} • original`;
-          }
-        }
-      });
-
-      results.appendChild(el);
+    // If we don't have the blob yet (e.g., img loaded from URL), fetch it
+    if (!currentBlob) {
+      const res = await fetch(imgEl.src, { mode: 'cors' });
+      if (!res.ok) throw new Error('Fetch failed');
+      currentBlob = await res.blob();
     }
-  } catch (e) {
-    console.error(e);
-    noResults.classList.remove('hidden');
+    // Convert blob to Base64
+    currentDataUrl = await blobToDataUrl(currentBlob);
+    // Swap UI: hide image, show Base64
+    imgEl.style.display = 'none';
+    b64El.textContent = currentDataUrl;
+    b64El.style.display = 'block';
+    mode = 'b64';
+  } catch (err) {
+    alert('Could not convert to Base64 (CORS or network). Try uploading the file instead.');
   }
-}
-
-async function fetchAsDataUrl(url){
-  const res = await fetch(url, { mode: 'cors' });
-  if (!res.ok) throw new Error('Fetch failed');
-  const blob = await res.blob();
-  const dataUrl = await blobToDataUrl(blob);
-  return { dataUrl, size: blob.size };
-}
-
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(fr.result);
-    fr.onerror = reject;
-    fr.readAsDataURL(blob);
-  });
-}
-
-function dataUrlToBlob(dataUrl) {
-  const m = dataUrl.match(/^data:([^;]+);base64,(.*)$/s);
-  if (!m) return null;
-  const mime = m[1];
-  const b64 = m[2];
-  try {
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
-    return new Blob([bytes], { type: mime });
-  } catch { return null; }
-}
-
-copyBtn.addEventListener('click', async ()=>{
-  try { await navigator.clipboard.writeText(b64ta.value); toast('Copied'); } catch { b64ta.select(); document.execCommand('copy'); toast('Copied'); }
 });
 
-downloadB64Btn.addEventListener('click', ()=>{
-  const blob = new Blob([b64ta.value], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  triggerDownload(url, 'image.base64.txt');
-});
-
-downloadDecodedBtn.addEventListener('click', ()=>{
-  const blob = dataUrlToBlob(b64ta.value);
-  if (!blob) { alert('Paste a valid data URL first.'); return; }
-  const ext = (blob.type || 'image/png').split('/')[1] || 'png';
-  const url = URL.createObjectURL(blob);
-  triggerDownload(url, `decoded-image.${ext}`);
-});
-
-function triggerDownload(url, name){
-  const a = document.createElement('a');
-  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 5000);
-}
-
-searchBtn.addEventListener('click', () => searchCommons(q.value.trim()));
-q.addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchCommons(q.value.trim()); });
-</script>
-</body>
-</html>
+// Left-click the Base64 -> show image again
+stage.addEventListener('click', () => {
+  if
