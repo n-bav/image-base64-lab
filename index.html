@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Image ⇄ Base64 (Minimal + Start Over)</title>
+  <title>Image ⇄ Base64 (with Start Over)</title>
   <style>
     :root { --ink:#0f172a; --ring:#e5e7eb; --bg:#f8fafc; }
     * { box-sizing: border-box; }
@@ -17,9 +17,9 @@
     .thumb { border:1px solid var(--ring); border-radius:8px; overflow:hidden; cursor:pointer; }
     .thumb img { width:100%; height:120px; object-fit:cover; display:block; }
     #stage { border:1px dashed var(--ring); border-radius:12px; padding:10px; min-height:260px; display:none; place-items:center; background:#fff; }
-    #img { max-width:100%; max-height:80vh; object-fit:contain; display:none; }
-    #b64 { width:100%; max-height:80vh; overflow:auto; white-space:pre-wrap; word-break:break-all; font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; display:none; }
-    #startOver { display:none; margin-left:auto; }
+    #img { max-width:100%; max-height:80vh; object-fit:contain; display:none; cursor:pointer; }
+    #b64 { width:100%; max-height:80vh; overflow:auto; white-space:pre-wrap; word-break:break-all; font:12px/1.4 ui-monospace, Menlo, Consolas, monospace; display:none; cursor:pointer; }
+    #startOver { display:none; }
   </style>
 </head>
 <body>
@@ -32,16 +32,16 @@
       <input id="fileInput" type="file" accept="image/*" />
     </div>
 
-    <!-- Search results (hidden once an image is chosen) -->
+    <!-- Search results -->
     <div id="results"></div>
 
-    <!-- Display area: clicking toggles image ⇄ Base64 -->
+    <!-- Display area -->
     <div id="stage">
       <img id="img" alt="image" />
       <pre id="b64"></pre>
     </div>
 
-    <!-- Start Over button (visible when Base64 is shown) -->
+    <!-- Start Over -->
     <div class="row">
       <button id="startOver">Start Over</button>
     </div>
@@ -49,43 +49,37 @@
 
 <script>
 const controls = document.getElementById('controls');
-const q = document.getElementById('q');
-const searchBtn = document.getElementById('searchBtn');
 const results = document.getElementById('results');
 const fileInput = document.getElementById('fileInput');
+const searchBtn = document.getElementById('searchBtn');
+const q = document.getElementById('q');
 
 const stage = document.getElementById('stage');
 const imgEl = document.getElementById('img');
 const b64El = document.getElementById('b64');
 const startOverBtn = document.getElementById('startOver');
 
-let currentBlob = null;     // Blob of current image
-let currentDataUrl = null;  // Base64 data URL
-let mode = 'none';          // 'image' | 'b64' | 'none'
+let currentBlob = null;
+let currentDataUrl = null;
+let mode = 'none'; // 'image' or 'b64'
 
-// ----- Toggle behavior -----
+// Toggle behaviors
 imgEl.addEventListener('click', async () => {
   if (mode !== 'image') return;
   await showBase64();
 });
-
 b64El.addEventListener('click', () => {
   if (mode !== 'b64') return;
   showImage();
 });
+startOverBtn.addEventListener('click', resetAll);
 
-// Start Over resets everything
-startOverBtn.addEventListener('click', () => {
-  resetAll();
-});
-
-// ----- Search -----
+// Search
 searchBtn.addEventListener('click', () => doSearch(q.value.trim()));
 q.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(q.value.trim()); });
 
 async function doSearch(term) {
   results.innerHTML = '';
-  results.style.display = 'grid';
   if (!term) return;
   const endpoint = 'https://commons.wikimedia.org/w/api.php';
   const params = new URLSearchParams({
@@ -93,7 +87,7 @@ async function doSearch(term) {
     generator: 'search',
     gsrsearch: term,
     gsrnamespace: '6',
-    gsrlimit: '18',
+    gsrlimit: '12',
     prop: 'imageinfo',
     iiprop: 'url|mime',
     iiurlwidth: '600',
@@ -104,29 +98,27 @@ async function doSearch(term) {
     const res = await fetch(`${endpoint}?${params}`);
     const data = await res.json();
     const pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
-    pages.sort((a,b)=> (a.index||0) - (b.index||0));
+    pages.sort((a,b)=> (a.index||0)-(b.index||0));
     for (const p of pages) {
       const info = p.imageinfo && p.imageinfo[0];
       if (!info) continue;
-      const thumb = info.thumburl || info.url;
-      const full  = info.url;
+      const full = info.url;
       const card = document.createElement('div');
       card.className = 'thumb';
-      card.innerHTML = `<img src="${thumb}" alt="thumb">`;
+      card.innerHTML = `<img src="${info.thumburl || full}" alt="thumb">`;
       card.addEventListener('click', () => loadImageFromUrl(full));
       results.appendChild(card);
     }
-  } catch { /* keep minimal */ }
+  } catch {}
 }
 
-// ----- Upload -----
+// Upload
 fileInput.addEventListener('change', (e) => {
   const file = e.target.files && e.target.files[0];
-  if (!file) return;
-  setStageImage(file);
+  if (file) setStageImage(file);
 });
 
-// ----- Stage helpers -----
+// Stage helpers
 async function loadImageFromUrl(url) {
   try {
     const res = await fetch(url, { mode: 'cors' });
@@ -134,67 +126,49 @@ async function loadImageFromUrl(url) {
     const blob = await res.blob();
     setStageImage(blob);
   } catch {
-    alert('Could not load image from the web (CORS). Try using file upload.');
+    alert('Could not load image (CORS). Try uploading instead.');
   }
 }
 
 function setStageImage(blob) {
-  // Hide all non-stage UI
   controls.style.display = 'none';
   results.style.display = 'none';
-
-  // Clean previous
-  if (imgEl.src && imgEl.src.startsWith('blob:')) URL.revokeObjectURL(imgEl.src);
   currentBlob = blob;
   currentDataUrl = null;
-
-  // Show only the stage with the image
   imgEl.src = URL.createObjectURL(blob);
   imgEl.style.display = 'block';
   b64El.style.display = 'none';
   stage.style.display = 'grid';
-  startOverBtn.style.display = 'none';
+  startOverBtn.style.display = 'inline-block'; // always show once image chosen
   mode = 'image';
 }
 
 function showImage() {
   b64El.style.display = 'none';
   imgEl.style.display = 'block';
-  startOverBtn.style.display = 'none'; // hide until they convert again
   mode = 'image';
 }
 
 async function showBase64() {
-  try {
-    if (!currentBlob) return;
-    if (!currentDataUrl) currentDataUrl = await blobToDataUrl(currentBlob);
-    b64El.textContent = currentDataUrl;
-    imgEl.style.display = 'none';
-    b64El.style.display = 'block';
-    startOverBtn.style.display = 'inline-block'; // show Start Over only in Base64 mode
-    mode = 'b64';
-  } catch {
-    alert('Could not convert to Base64. If this is a web image, try uploading it instead.');
-  }
+  if (!currentBlob) return;
+  if (!currentDataUrl) currentDataUrl = await blobToDataUrl(currentBlob);
+  b64El.textContent = currentDataUrl;
+  imgEl.style.display = 'none';
+  b64El.style.display = 'block';
+  mode = 'b64';
 }
 
 function resetAll() {
-  // Revoke any object URL
   if (imgEl.src && imgEl.src.startsWith('blob:')) URL.revokeObjectURL(imgEl.src);
-
-  // Clear state + stage
   imgEl.removeAttribute('src');
   imgEl.style.display = 'none';
   b64El.textContent = '';
   b64El.style.display = 'none';
   stage.style.display = 'none';
   startOverBtn.style.display = 'none';
-
   currentBlob = null;
   currentDataUrl = null;
   mode = 'none';
-
-  // Show initial UI
   controls.style.display = 'flex';
   results.innerHTML = '';
   results.style.display = 'grid';
