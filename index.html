@@ -3,12 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Image ⇄ Base64 (with Start Over)</title>
+  <title>Image ⇄ Base64</title>
   <style>
     :root { --ink:#0f172a; --ring:#e5e7eb; --bg:#f8fafc; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
-    header { padding:14px 16px; background:#0f172a; color:#fff; }
+    header { padding:14px 16px; background:#0f172a; color:#fff; display:flex; align-items:center; justify-content:space-between; }
+    header h1 { margin:0; font-size:16px; font-weight:600; }
+    #startOver { display:none; padding:6px 12px; border:1px solid #fff; border-radius:6px; background:transparent; color:#fff; cursor:pointer; font-size:14px; }
+    #startOver:hover { background:rgba(255,255,255,0.1); }
     main { padding:16px; max-width:900px; margin:0 auto; display:grid; gap:16px; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     input[type="text"] { flex:1 1 260px; padding:10px 12px; border:1px solid var(--ring); border-radius:8px; }
@@ -19,11 +22,13 @@
     #stage { border:1px dashed var(--ring); border-radius:12px; padding:10px; min-height:260px; display:none; place-items:center; background:#fff; }
     #img { max-width:100%; max-height:80vh; object-fit:contain; display:none; cursor:pointer; }
     #b64 { width:100%; max-height:80vh; overflow:auto; white-space:pre-wrap; word-break:break-all; font:12px/1.4 ui-monospace, Menlo, Consolas, monospace; display:none; cursor:pointer; }
-    #startOver { display:none; }
   </style>
 </head>
 <body>
-  <header><strong>Image ⇄ Base64</strong></header>
+  <header>
+    <h1>Image ⇄ Base64</h1>
+    <button id="startOver">Start Over</button>
+  </header>
   <main>
     <!-- Controls shown initially -->
     <div id="controls" class="row">
@@ -39,11 +44,6 @@
     <div id="stage">
       <img id="img" alt="image" />
       <pre id="b64"></pre>
-    </div>
-
-    <!-- Start Over -->
-    <div class="row">
-      <button id="startOver">Start Over</button>
     </div>
   </main>
 
@@ -139,7 +139,7 @@ function setStageImage(blob) {
   imgEl.style.display = 'block';
   b64El.style.display = 'none';
   stage.style.display = 'grid';
-  startOverBtn.style.display = 'inline-block'; // always show once image chosen
+  startOverBtn.style.display = 'inline-block'; // show in header
   mode = 'image';
 }
 
@@ -159,7 +159,10 @@ async function showBase64() {
 }
 
 function resetAll() {
+  // Revoke current object URL if any
   if (imgEl.src && imgEl.src.startsWith('blob:')) URL.revokeObjectURL(imgEl.src);
+
+  // Clear stage & state
   imgEl.removeAttribute('src');
   imgEl.style.display = 'none';
   b64El.textContent = '';
@@ -169,9 +172,14 @@ function resetAll() {
   currentBlob = null;
   currentDataUrl = null;
   mode = 'none';
-  controls.style.display = 'flex';
+
+  // Restore initial UI instantly (no refresh)
+  q.value = '';
+  fileInput.value = '';
   results.innerHTML = '';
+  controls.style.display = 'flex';
   results.style.display = 'grid';
+  window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
 function blobToDataUrl(blob) {
