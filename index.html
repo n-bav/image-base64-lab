@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image ⇄ Base64 Lab</title>
+  <style>
+    :root { --ink:#0f172a; --bg:#f8fafc; --card:#ffffff; --muted:#64748b; --ring:#e5e7eb; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+    header { padding: 16px 20px; background: var(--ink); color: white; }
+    header h1 { margin:0; font-size: 18px; }
+    main { padding: 16px; display: grid; gap: 16px; max-width: 1100px; margin: 0 auto; }
+    .card { background: var(--card); border:1px solid var(--ring); border-radius: 16px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items: center; }
+    input[type="text"], textarea { width: 100%; border:1px solid var(--ring); border-radius: 10px; padding:10px 12px; font:inherit; }
+    button { border:1px solid var(--ring); background:white; padding:10px 12px; border-radius: 10px; cursor:pointer; }
+    button:hover { background:#f3f4f6; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap:10px; }
+    .thumb { position: relative; border:1px solid var(--ring); border-radius: 12px; overflow:hidden; background:#fff; }
+    .thumb img { width:100%; height:140px; object-fit:cover; display:block; }
+    .thumb .meta { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent, rgba(0,0,0,.6)); color:white; font-size:12px; padding:6px 8px; }
+    .hidden { display:none; }
+    .flex { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .preview { max-width:100%; max-height:360px; object-fit:contain; border:1px solid var(--ring); border-radius: 10px; }
+    .cols { display:grid; grid-template-columns: 1fr; gap:16px; }
+    @media (min-width: 900px) { .cols { grid-template-columns: 1.2fr 1fr; } }
+    small.muted { color: var(--muted); }
+    .pill { background:#f1f5f9; padding:4px 8px; border-radius: 999px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🖼️ Image ⇄ Base64 Lab</h1>
+  </header>
+  <main>
+    <section class="card">
+      <div class="row">
+        <input id="q" type="text" placeholder="Search Wikimedia Commons (e.g., 'sunrise', 'cat', 'New York skyline')" />
+        <button id="searchBtn">Search</button>
+        <span class="pill">Source: Wikimedia Commons</span>
+      </div>
+      <div id="results" class="grid" style="margin-top:12px;"></div>
+      <div id="noResults" class="hidden" style="margin-top:8px;">
+        <small class="muted">No results. Try another term.</small>
+      </div>
+    </section>
+
+    <section class="card cols">
+      <div>
+        <div class="flex">
+          <strong>Selected Image</strong>
+          <small id="imgInfo" class="muted"></small>
+        </div>
+        <img id="preview" class="preview" alt="Preview" />
+        <div class="row" style="margin-top:10px;">
+          <input id="imageUrl" type="text" placeholder="…or paste an image URL and click Load" />
+          <button id="loadUrl">Load</button>
+          <input type="file" id="fileInput" accept="image/*" />
+        </div>
+      </div>
+      <div>
+        <div class="flex" style="justify-content:space-between;">
+          <strong>Base64</strong>
+          <div class="row">
+            <button id="copyB64">Copy</button>
+            <button id="downloadB64">Download .txt</button>
+            <button id="downloadDecoded">Download Decoded Image</button>
+          </div>
+        </div>
+        <textarea id="b64" rows="12" placeholder="data:image/png;base64,...."></textarea>
+        <div class="row" style="margin-top:8px;">
+          <button id="fromB64">Load from Base64</button>
+          <small class="muted">Paste a Base64 data URL above and click “Load from Base64”.</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <strong>Tips</strong>
+      <ul>
+        <li>Click a search result to select and convert automatically.</li>
+        <li>Drag & drop an image file onto this page to convert.</li>
+        <li>Paste a Base64 string into the right panel and click <em>Load from Base64</em>.</li>
+      </ul>
+      <small class="muted">Powered by Wikimedia Commons API. Images are typically under free licenses—check at source.</small>
+    </section>
+  </main>
+
+<script>
+const q = document.getElementById('q');
+const searchBtn = document.getElementById('searchBtn');
+const results = document.getElementById('results');
+const noResults = document.getElementById('noResults');
+const preview = document.getElementById('preview');
+const b64ta = document.getElementById('b64');
+const imgInfo = document.getElementById('imgInfo');
+const imageUrlInput = document.getElementById('imageUrl');
+const loadUrlBtn = document.getElementById('loadUrl');
+const fileInput = document.getElementById('fileInput');
+const copyBtn = document.getElementById('copyB64');
+const downloadB64Btn = document.getElementById('downloadB64');
+const downloadDecodedBtn = document.getElementById('downloadDecoded');
+const fromB64Btn = document.getElementById('fromB64');
+
+async function searchCommons(term) {
+  results.innerHTML = '';
+  noResults.classList.add('hidden');
+  if (!term) return;
+  const endpoint = 'https://commons.wikimedia.org/w/api.php';
+  const params = new URLSearchParams({
+    action: 'query',
+    generator: 'search',
+    gsrsearch: term,
+    gsrnamespace: '6',
+    gsrlimit: '24',
+    prop: 'imageinfo',
+    iiprop: 'url|mime',
+    iiurlwidth: '600',
+    format: 'json',
+    origin: '*'
+  });
+  const url = `${endpoint}?${params}`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    const pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
+    if (!pages.length) { noResults.classList.remove('hidden'); return; }
+    pages.sort((a,b)=> (a.index||0) - (b.index||0));
+    for (const p of pages) {
+      const info = p.imageinfo && p.imageinfo[0];
+      if (!info) continue;
+      const thumb = info.thumburl || info.url;
+      const full = info.url;
+      const mime = info.mime || '';
+      const el = document.createElement('div');
+      el.className = 'thumb';
+      el.innerHTML = `<img src="${thumb}" alt="thumbnail"/><div class="meta">${mime.replace('image/','')}</div>`;
+      el.addEventListener('click', () => selectImage(full));
+      results.appendChild(el);
+    }
+  } catch (e) {
+    console.error(e);
+    noResults.classList.remove('hidden');
+  }
+}
+
+async function selectImage(url) {
+  imageUrlInput.value = url;
+  imgInfo.textContent = url;
+  await processImageUrl(url);
+}
+
+async function processImageUrl(url) {
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error('Fetch failed');
+    const ct = res.headers.get('content-type') || 'image/png';
+    const blob = await res.blob();
+    const dataUrl = await blobToDataUrl(blob);
+    preview.src = dataUrl;
+    b64ta.value = dataUrl;
+    imgInfo.textContent = `${ct} • ${Math.round(blob.size/1024)} KB`;
+  } catch (e) {
+    alert('Could not load image (maybe CORS-blocked). Try downloading the file and dropping it here.');
+  }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+
+function dataUrlToBlob(dataUrl) {
+  const m = dataUrl.match(/^data:([^;]+);base64,(.*)$/s);
+  if (!m) return null;
+  const mime = m[1];
+  const b64 = m[2];
+  try {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  } catch { return null; }
+}
+
+// Events
+searchBtn.addEventListener('click', () => searchCommons(q.value.trim()));
+q.addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchCommons(q.value.trim()); });
+loadUrlBtn.addEventListener('click', ()=>{ const u=imageUrlInput.value.trim(); if(u) processImageUrl(u); });
+fileInput.addEventListener('change', async (e)=>{
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const dataUrl = await blobToDataUrl(file);
+  preview.src = dataUrl;
+  b64ta.value = dataUrl;
+  imgInfo.textContent = `${file.type || 'image/*'} • ${Math.round(file.size/1024)} KB`;
+});
+
+copyBtn.addEventListener('click', async ()=>{
+  try {
+    await navigator.clipboard.writeText(b64ta.value);
+  } catch {
+    const ta = b64ta; ta.select(); document.execCommand('copy');
+  }
+});
+
+downloadB64Btn.addEventListener('click', ()=>{
+  const blob = new Blob([b64ta.value], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  triggerDownload(url, 'image.base64.txt');
+});
+
+downloadDecodedBtn.addEventListener('click', ()=>{
+  const blob = dataUrlToBlob(b64ta.value);
+  if (!blob) { alert('Paste a valid data URL first.'); return; }
+  const ext = (blob.type || 'image/png').split('/')[1] || 'png';
+  const url = URL.createObjectURL(blob);
+  triggerDownload(url, `decoded-image.${ext}`);
+});
+
+fromB64Btn.addEventListener('click', ()=>{
+  const blob = dataUrlToBlob(b64ta.value.trim());
+  if (!blob) { alert('Not a valid Base64 data URL.'); return; }
+  const url = URL.createObjectURL(blob);
+  preview.src = url;
+  imgInfo.textContent = `${blob.type || 'image/*'} • ${Math.round(blob.size/1024)} KB`;
+});
+
+function triggerDownload(url, name){
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+}
+
+// Drag & drop
+window.addEventListener('dragover', e=>{ e.preventDefault(); });
+window.addEventListener('drop', async (e)=>{
+  e.preventDefault();
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  const dataUrl = await blobToDataUrl(file);
+  preview.src = dataUrl; b64ta.value = dataUrl; imgInfo.textContent = `${file.type} • ${Math.round(file.size/1024)} KB`;
+});
+</script>
+</body>
+</html>
